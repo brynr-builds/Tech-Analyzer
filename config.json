@@ -1,0 +1,10 @@
+{
+  "w_units_per_hr": 0.4,
+  "w_revenue_per_job": 0.3,
+  "w_revenue_per_hr": 0.3,
+  "tier_elite": 0.9,
+  "tier_strong": 0.7,
+  "tier_average": 0.3,
+  "mileage_cost_per_mile": 0.0,
+  "output_filename": "Tech_Efficiency_Report.xlsx"
+}
