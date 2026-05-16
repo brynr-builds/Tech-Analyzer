@@ -205,18 +205,25 @@ def render_capacity_overview(capacity_analysis: pd.DataFrame):
         return
     
     # Count by assessment
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     understaffed = len(capacity_analysis[capacity_analysis["Staffing Assessment"].str.contains("Understaffed")])
     rightsized = len(capacity_analysis[capacity_analysis["Staffing Assessment"].str.contains("Right-sized")])
     overstaffed = len(capacity_analysis[capacity_analysis["Staffing Assessment"].str.contains("Overstaffed")])
     
+    techs_to_hire = capacity_analysis[capacity_analysis["Techs to Hire/Transfer"] > 0]["Techs to Hire/Transfer"].sum()
+    techs_to_transfer = abs(capacity_analysis[capacity_analysis["Techs to Hire/Transfer"] < 0]["Techs to Hire/Transfer"].sum())
+
     with col1:
         st.metric("🔴 Understaffed", understaffed, help="Output/tech >10% above average")
     with col2:
         st.metric("🟢 Right-sized", rightsized, help="Output/tech within ±10% of average")
     with col3:
         st.metric("🔴 Overstaffed", overstaffed, help="Output/tech >10% below average")
+    with col4:
+        st.metric("📈 Total Techs to Hire", round(techs_to_hire, 1), help="Total missing headcount across understaffed teams")
+    with col5:
+        st.metric("📉 Total Techs to Transfer", round(techs_to_transfer, 1), help="Total excess headcount across overstaffed teams")
     
     # Scatter plot: Techs vs Output/Tech
     if len(capacity_analysis) > 1:
@@ -314,10 +321,18 @@ def render_efficiency_rankings(team_stats: pd.DataFrame, individual_stats: pd.Da
     with col2:
         st.write("**Top 10 Technicians (by Efficiency Score)**")
         if "Efficiency Score" in individual_stats.columns:
-            top_techs = individual_stats.nlargest(10, "Efficiency Score")[
-                ["Technician", "Technician Team", "Efficiency Score", "Tier", "Gross $/Hr"]
-            ].reset_index(drop=True)
+            cols_to_show = ["Technician", "Technician Team", "Efficiency Score", "Tier", "Gross $/Hr"]
+            if "Coaching Profile" in individual_stats.columns:
+                cols_to_show.append("Coaching Profile")
+            if "Flight Risk" in individual_stats.columns:
+                cols_to_show.append("Flight Risk")
+
+            top_techs = individual_stats.nlargest(10, "Efficiency Score")[cols_to_show].reset_index(drop=True)
             top_techs.index = top_techs.index + 1
+
+            chart_data = top_techs[["Technician", "Efficiency Score"]].set_index("Technician")
+            st.bar_chart(chart_data)
+
             st.dataframe(top_techs, use_container_width=True)
 
 
@@ -403,11 +418,29 @@ def render_detailed_tables(
     
     with tab3:
         if diagnostic is not None:
-            st.dataframe(diagnostic, use_container_width=True, hide_index=True)
+            def highlight_diagnosis(val):
+                if isinstance(val, str):
+                    if "✗" in val or "⚠" in val:
+                        return 'background-color: #ffcccc'
+                    if "✓" in val:
+                        return 'background-color: #ccffcc'
+                return ''
+
+            styled_diagnostic = diagnostic.style.map(highlight_diagnosis, subset=['Diagnosis'])
+            st.dataframe(styled_diagnostic, use_container_width=True, hide_index=True)
     
     with tab4:
         if capacity_analysis is not None:
-            st.dataframe(capacity_analysis, use_container_width=True, hide_index=True)
+            def highlight_capacity(val):
+                if isinstance(val, str):
+                    if "Understaffed" in val or "Overstaffed" in val:
+                        return 'background-color: #ffcccc'
+                    if "Right-sized" in val:
+                        return 'background-color: #ccffcc'
+                return ''
+
+            styled_capacity = capacity_analysis.style.map(highlight_capacity, subset=['Staffing Assessment'])
+            st.dataframe(styled_capacity, use_container_width=True, hide_index=True)
 
 
 def main():
@@ -418,39 +451,94 @@ def main():
     with st.sidebar:
         st.header("📁 Data Upload")
         uploads = st.file_uploader(
-            "Upload Excel files",
-            type=["xlsx", "xls"],
+            "Upload Excel files or Zips",
+            type=["xlsx", "xls", "zip"],
             accept_multiple_files=True,
-            help="Upload Daily Tech Performance files"
+            help="Upload Daily Tech Performance files or Zip files containing them"
         )
         
         if not uploads:
             st.info("👆 Upload files to get started")
-            st.stop()
         
         # Load config
         cfg = AnalyzerConfig()
+
+    if not uploads:
+        st.markdown("### Welcome to the Tech Efficiency Analyzer!")
+        st.markdown("""
+        This tool analyzes your daily technician performance data to provide actionable insights.
+
+        **With this dashboard, you can:**
+        - Identify understaffed teams that need to hire, and overstaffed teams that can reduce headcount.
+        - Get data-driven coaching recommendations for every single technician.
+        - Catch flight risks early before they churn.
+        """)
+
+        st.info("👈 **To get started:** Open the sidebar on the left and upload your Excel data.")
+
+        st.markdown("---")
+        st.markdown("### 📘 Data Setup Walkthrough")
+
+        st.markdown("""
+        To process your information and get the desired outputs, you need to set up a pipeline to export data from your CRM/Dispatch system (like ServiceTitan, FieldEdge, etc.) into an Excel format.
+
+        #### Step 1: Export Your Data
+        Run a daily or weekly report in your system that details the performance of each technician. Export this report as an `.xlsx` or `.xls` file. You can upload multiple days/weeks of files at once, or zip them into a single `.zip` file and upload that.
         
-        # Process uploads
-        with st.spinner("Loading data..."):
-            temp_dir = tempfile.mkdtemp(prefix="dashboard_")
-            paths = []
-            for u in uploads:
-                p = Path(temp_dir) / u.name
+        #### Step 2: Ensure Required Columns
+        The analyzer is smart and will try to match your column names, but ensure your report contains data that matches these core concepts:
+
+        *   **Technician Name:** (Required) Who did the work? *[Accepts: Technician, Tech, Name]*
+        *   **Technician Team:** (Required) What region/team are they on? *[Accepts: Team, Region, Market]*
+        *   **Hours Worked:** (Required) *[Accepts: Hours, Hrs, Labor Hours]*
+        *   **Jobs/Units Completed:** (Required) *[Accepts: Units, Jobs, Builds, Qty]*
+        *   **Revenue/Amount:** (Required) The gross dollars generated. *[Accepts: Amount, Revenue, Sales, Invoice Amount]*
+        *   **Date:** (Highly Recommended) The date the work was performed. If you exclude this, the tool cannot calculate Capacity (hiring needs), Seasonality, or Flight Risks.
+
+        #### Step 3: Interpret the Outputs
+        Once uploaded, navigate the tabs to find your insights:
+        *   **Capacity Analysis:** Tells you exactly how many technicians a specific team needs to hire (or transfer away) to match your territory's average workload per technician.
+        *   **Efficiency Rankings:** Check the "Coaching Profile" column. The tool will automatically suggest if a tech needs "Speed Training" (too slow) or "Upsell Training" (doing jobs fast, but for low dollars).
+        *   **Diagnostic Summary:** Groups your teams into 4 quadrants so you know which managers to praise and which need a rebuild strategy.
+        """)
+        st.stop()
+
+    # Process uploads
+    with st.spinner("Loading data..."):
+        import zipfile
+        import os
+        temp_dir = tempfile.mkdtemp(prefix="dashboard_")
+        paths = []
+        for i, u in enumerate(uploads):
+            if u.name.endswith('.zip'):
+                zip_dir = os.path.join(temp_dir, f"zip_{i}")
+                os.makedirs(zip_dir, exist_ok=True)
+                with zipfile.ZipFile(io.BytesIO(u.getvalue())) as z:
+                    z.extractall(zip_dir)
+                    # Add any extracted excel files to our paths list
+                    for root, _, files in os.walk(zip_dir):
+                        for file in files:
+                            if file.endswith('.xlsx') or file.endswith('.xls'):
+                                extracted_path = os.path.join(root, file)
+                                if extracted_path not in paths:
+                                    paths.append(extracted_path)
+            else:
+                p = Path(temp_dir) / f"{i}_{u.name}"
                 p.write_bytes(u.getvalue())
                 paths.append(str(p))
-            
-            try:
-                df = load_and_process_data(paths, cfg)
-            except Exception as e:
-                st.error(f"Error loading data: {e}")
-                st.stop()
         
-        st.success(f"✅ Loaded {len(df):,} records")
+        try:
+            df = load_and_process_data(paths, cfg)
+        except Exception as e:
+            st.error(f"Error loading data: {e}")
+            st.stop()
+
+    st.success(f"✅ Loaded {len(df):,} records")
+
+    st.divider()
         
-        st.divider()
-        
-        # Date Filter
+    # Date Filter
+    with st.sidebar:
         st.header("📅 Date Filter")
         
         if "Date" in df.columns and df["Date"].notna().any():

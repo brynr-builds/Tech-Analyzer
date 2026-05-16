@@ -39,18 +39,31 @@ with st.sidebar:
     output_name = st.text_input("Output filename", value=cfg.output_filename)
 
 st.write("### Upload files")
-uploads = st.file_uploader("Excel files (.xlsx, .xls)", type=["xlsx", "xls"], accept_multiple_files=True)
+uploads = st.file_uploader("Excel files (.xlsx, .xls) or Zips", type=["xlsx", "xls", "zip"], accept_multiple_files=True)
 
 run_btn = st.button("Run Analysis", type="primary", disabled=(not uploads))
 
 if run_btn and uploads:
     with st.spinner("Reading files and running analysis..."):
+        import os
         temp_dir = tempfile.mkdtemp(prefix="tech_analyzer_")
         paths = []
-        for u in uploads:
-            p = Path(temp_dir) / u.name
-            p.write_bytes(u.getvalue())
-            paths.append(str(p))
+        for i, u in enumerate(uploads):
+            if u.name.endswith('.zip'):
+                zip_dir = os.path.join(temp_dir, f"zip_{i}")
+                os.makedirs(zip_dir, exist_ok=True)
+                with zipfile.ZipFile(io.BytesIO(u.getvalue())) as z:
+                    z.extractall(zip_dir)
+                    for root, _, files in os.walk(zip_dir):
+                        for file in files:
+                            if file.endswith('.xlsx') or file.endswith('.xls'):
+                                extracted_path = os.path.join(root, file)
+                                if extracted_path not in paths:
+                                    paths.append(extracted_path)
+            else:
+                p = Path(temp_dir) / f"{i}_{u.name}"
+                p.write_bytes(u.getvalue())
+                paths.append(str(p))
 
         results = run_analysis(paths, cfg)
         
@@ -97,7 +110,16 @@ if run_btn and uploads:
         with tab2:
             st.subheader("Diagnostic Summary")
             st.caption("Teams diagnosed by Efficiency + Tenure quadrant")
-            st.dataframe(diagnostic, use_container_width=True)
+            def highlight_diagnosis(val):
+                if isinstance(val, str):
+                    if "✗" in val or "⚠" in val:
+                        return 'background-color: #ffcccc'
+                    if "✓" in val:
+                        return 'background-color: #ccffcc'
+                return ''
+
+            styled_diagnostic = diagnostic.style.map(highlight_diagnosis, subset=['Diagnosis'])
+            st.dataframe(styled_diagnostic, use_container_width=True)
         
         with tab3:
             st.subheader("Capacity Analysis")
@@ -105,20 +127,36 @@ if run_btn and uploads:
             
             if capacity_analysis is not None:
                 # Show assessment summary
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4, col5 = st.columns(5)
                 understaffed = len(capacity_analysis[capacity_analysis["Staffing Assessment"].str.contains("Understaffed")])
                 overstaffed = len(capacity_analysis[capacity_analysis["Staffing Assessment"].str.contains("Overstaffed")])
                 rightsized = len(capacity_analysis[capacity_analysis["Staffing Assessment"].str.contains("Right-sized")])
                 
+                techs_to_hire = capacity_analysis[capacity_analysis["Techs to Hire/Transfer"] > 0]["Techs to Hire/Transfer"].sum()
+                techs_to_transfer = abs(capacity_analysis[capacity_analysis["Techs to Hire/Transfer"] < 0]["Techs to Hire/Transfer"].sum())
+
                 with col1:
                     st.metric("🔴 Understaffed", understaffed)
                 with col2:
                     st.metric("🟢 Right-sized", rightsized)
                 with col3:
                     st.metric("🔴 Overstaffed", overstaffed)
+                with col4:
+                    st.metric("📈 Total Techs to Hire", round(techs_to_hire, 1))
+                with col5:
+                    st.metric("📉 Total Techs to Transfer", round(techs_to_transfer, 1))
                 
                 st.write("#### Team Capacity Assessment")
-                st.dataframe(capacity_analysis, use_container_width=True)
+                def highlight_capacity(val):
+                    if isinstance(val, str):
+                        if "Understaffed" in val or "Overstaffed" in val:
+                            return 'background-color: #ffcccc'
+                        if "Right-sized" in val:
+                            return 'background-color: #ccffcc'
+                    return ''
+
+                styled_capacity = capacity_analysis.style.map(highlight_capacity, subset=['Staffing Assessment'])
+                st.dataframe(styled_capacity, use_container_width=True)
             else:
                 st.info("Capacity analysis requires Date column in data")
         
