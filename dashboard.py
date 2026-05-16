@@ -329,6 +329,10 @@ def render_efficiency_rankings(team_stats: pd.DataFrame, individual_stats: pd.Da
 
             top_techs = individual_stats.nlargest(10, "Efficiency Score")[cols_to_show].reset_index(drop=True)
             top_techs.index = top_techs.index + 1
+
+            chart_data = top_techs[["Technician", "Efficiency Score"]].set_index("Technician")
+            st.bar_chart(chart_data)
+
             st.dataframe(top_techs, use_container_width=True)
 
 
@@ -414,11 +418,29 @@ def render_detailed_tables(
     
     with tab3:
         if diagnostic is not None:
-            st.dataframe(diagnostic, use_container_width=True, hide_index=True)
+            def highlight_diagnosis(val):
+                if isinstance(val, str):
+                    if "✗" in val or "⚠" in val:
+                        return 'background-color: #ffcccc'
+                    if "✓" in val:
+                        return 'background-color: #ccffcc'
+                return ''
+
+            styled_diagnostic = diagnostic.style.map(highlight_diagnosis, subset=['Diagnosis'])
+            st.dataframe(styled_diagnostic, use_container_width=True, hide_index=True)
     
     with tab4:
         if capacity_analysis is not None:
-            st.dataframe(capacity_analysis, use_container_width=True, hide_index=True)
+            def highlight_capacity(val):
+                if isinstance(val, str):
+                    if "Understaffed" in val or "Overstaffed" in val:
+                        return 'background-color: #ffcccc'
+                    if "Right-sized" in val:
+                        return 'background-color: #ccffcc'
+                return ''
+
+            styled_capacity = capacity_analysis.style.map(highlight_capacity, subset=['Staffing Assessment'])
+            st.dataframe(styled_capacity, use_container_width=True, hide_index=True)
 
 
 def main():
@@ -429,39 +451,80 @@ def main():
     with st.sidebar:
         st.header("📁 Data Upload")
         uploads = st.file_uploader(
-            "Upload Excel files",
-            type=["xlsx", "xls"],
+            "Upload Excel files or Zips",
+            type=["xlsx", "xls", "zip"],
             accept_multiple_files=True,
-            help="Upload Daily Tech Performance files"
+            help="Upload Daily Tech Performance files or Zip files containing them"
         )
         
         if not uploads:
             st.info("👆 Upload files to get started")
-            st.stop()
         
         # Load config
         cfg = AnalyzerConfig()
+
+    if not uploads:
+        st.markdown("### Welcome to the Tech Efficiency Analyzer!")
+        st.markdown("""
+        This tool analyzes your daily technician performance data to provide actionable insights.
+
+        **With this dashboard, you can:**
+        - Identify understaffed teams that need to hire, and overstaffed teams that can reduce headcount.
+        - Get data-driven coaching recommendations for every single technician (e.g., Needs Speed Training, Upsell Training).
+        - Catch flight risks early before they churn.
+        - Understand how seasonality impacts efficiency.
+
+        **How to use:**
+        1. Open the sidebar on the left.
+        2. Upload your Daily Tech Performance Excel files (or a `.zip` file containing them).
+        3. The dashboard will automatically calculate everything and generate a downloadable report!
         
-        # Process uploads
-        with st.spinner("Loading data..."):
-            temp_dir = tempfile.mkdtemp(prefix="dashboard_")
-            paths = []
-            for u in uploads:
-                p = Path(temp_dir) / u.name
+        **Expected Excel Columns:**
+        - `Technician` (or Tech/Name)
+        - `Technician Team` (or Team/Region)
+        - `Hours`
+        - `Units`
+        - `Amount` (or Revenue)
+        - `Date` (Optional, required for capacity and flight risk)
+        """)
+        st.stop()
+
+    # Process uploads
+    with st.spinner("Loading data..."):
+        import zipfile
+        import os
+        temp_dir = tempfile.mkdtemp(prefix="dashboard_")
+        paths = []
+        for i, u in enumerate(uploads):
+            if u.name.endswith('.zip'):
+                zip_dir = os.path.join(temp_dir, f"zip_{i}")
+                os.makedirs(zip_dir, exist_ok=True)
+                with zipfile.ZipFile(io.BytesIO(u.getvalue())) as z:
+                    z.extractall(zip_dir)
+                    # Add any extracted excel files to our paths list
+                    for root, _, files in os.walk(zip_dir):
+                        for file in files:
+                            if file.endswith('.xlsx') or file.endswith('.xls'):
+                                extracted_path = os.path.join(root, file)
+                                if extracted_path not in paths:
+                                    paths.append(extracted_path)
+            else:
+                p = Path(temp_dir) / f"{i}_{u.name}"
                 p.write_bytes(u.getvalue())
                 paths.append(str(p))
-            
-            try:
-                df = load_and_process_data(paths, cfg)
-            except Exception as e:
-                st.error(f"Error loading data: {e}")
-                st.stop()
         
-        st.success(f"✅ Loaded {len(df):,} records")
+        try:
+            df = load_and_process_data(paths, cfg)
+        except Exception as e:
+            st.error(f"Error loading data: {e}")
+            st.stop()
+
+    st.success(f"✅ Loaded {len(df):,} records")
+
+    st.divider()
         
-        st.divider()
-        
-        # Date Filter
+    # Date Filter
+    with st.sidebar:
         st.header("📅 Date Filter")
         
         if "Date" in df.columns and df["Date"].notna().any():
