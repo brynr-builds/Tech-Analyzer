@@ -105,17 +105,24 @@ if run_btn and uploads:
             
             if capacity_analysis is not None:
                 # Show assessment summary
-                col1, col2, col3 = st.columns(3)
+                col1, col2, col3, col4, col5 = st.columns(5)
                 understaffed = len(capacity_analysis[capacity_analysis["Staffing Assessment"].str.contains("Understaffed")])
                 overstaffed = len(capacity_analysis[capacity_analysis["Staffing Assessment"].str.contains("Overstaffed")])
                 rightsized = len(capacity_analysis[capacity_analysis["Staffing Assessment"].str.contains("Right-sized")])
                 
+                techs_to_hire = capacity_analysis[capacity_analysis["Techs to Hire/Transfer"] > 0]["Techs to Hire/Transfer"].sum()
+                techs_to_transfer = abs(capacity_analysis[capacity_analysis["Techs to Hire/Transfer"] < 0]["Techs to Hire/Transfer"].sum())
+
                 with col1:
                     st.metric("🔴 Understaffed", understaffed)
                 with col2:
                     st.metric("🟢 Right-sized", rightsized)
                 with col3:
                     st.metric("🔴 Overstaffed", overstaffed)
+                with col4:
+                    st.metric("📈 Total Techs to Hire", round(techs_to_hire, 1))
+                with col5:
+                    st.metric("📉 Total Techs to Transfer", round(techs_to_transfer, 1))
                 
                 st.write("#### Team Capacity Assessment")
                 st.dataframe(capacity_analysis, use_container_width=True)

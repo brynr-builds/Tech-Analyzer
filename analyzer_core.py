@@ -207,6 +207,49 @@ def compute_individual_stats(df: pd.DataFrame, cfg: AnalyzerConfig) -> pd.DataFr
 
     out["Avg Hrs/Day"] = _safe_div(out["Hours"], out["Days Worked"]).round(1)
 
+    # Consistency Score (Std Dev of Daily Gross $/Hr)
+    if "Date" in df.columns and not df["Date"].isna().all():
+        tmp_cons = df.copy()
+        tmp_cons["Date"] = pd.to_datetime(tmp_cons["Date"], errors="coerce")
+        tmp_cons = tmp_cons.dropna(subset=["Date"])
+        daily = tmp_cons.groupby(["Technician", "Date"]).agg({"Amount": "sum", "Hours": "sum"}).reset_index()
+        daily["Gross $/Hr"] = _safe_div(daily["Amount"], daily["Hours"])
+        consistency = daily.groupby("Technician")["Gross $/Hr"].std().fillna(0).round(2).reset_index(name="Consistency Score")
+        out = out.merge(consistency, on="Technician", how="left")
+        out["Consistency Score"] = out["Consistency Score"].fillna(0)
+    else:
+        out["Consistency Score"] = 0.0
+
+    # Flight Risk (Recent 2 weeks avg vs historical avg)
+    if "Date" in df.columns and not df["Date"].isna().all():
+        tmp_flight = df.copy()
+        tmp_flight["Date"] = pd.to_datetime(tmp_flight["Date"], errors="coerce")
+        tmp_flight = tmp_flight.dropna(subset=["Date"])
+        max_date = tmp_flight["Date"].max()
+        cutoff_date = max_date - pd.Timedelta(days=14)
+
+        tmp_flight["Week Start"] = tmp_flight["Date"] - pd.to_timedelta(tmp_flight["Date"].dt.dayofweek, unit="D")
+        weekly_hrs = tmp_flight.groupby(["Technician", "Week Start"])["Hours"].sum().reset_index()
+
+        hist_avg = weekly_hrs.groupby("Technician")["Hours"].mean().reset_index(name="Hist Avg Hrs")
+
+        recent_mask = weekly_hrs["Week Start"] >= (cutoff_date - pd.to_timedelta(cutoff_date.dayofweek, unit="D"))
+        recent_avg = weekly_hrs[recent_mask].groupby("Technician")["Hours"].mean().reset_index(name="Recent Avg Hrs")
+
+        risk_df = hist_avg.merge(recent_avg, on="Technician", how="left").fillna(0)
+        risk_df["Flight Risk Ratio"] = _safe_div(risk_df["Recent Avg Hrs"], risk_df["Hist Avg Hrs"]).fillna(0)
+
+        def assign_risk(ratio):
+            if ratio < 0.5:
+                return "High Risk (Recent drop)"
+            return "Low Risk"
+
+        risk_df["Flight Risk"] = risk_df["Flight Risk Ratio"].apply(assign_risk)
+        out = out.merge(risk_df[["Technician", "Flight Risk"]], on="Technician", how="left")
+        out["Flight Risk"] = out["Flight Risk"].fillna("Unknown")
+    else:
+        out["Flight Risk"] = "Unknown"
+
     scored = add_efficiency_score(out, cfg)
     return scored
 
@@ -242,6 +285,24 @@ def add_efficiency_score(individual_df: pd.DataFrame, cfg: AnalyzerConfig) -> pd
         return "Underperformer"
 
     df["Tier"] = df["Percentile"].apply(tier)
+
+    # Coaching Profile
+    def coaching_profile(row):
+        p_units = row["_p_units_hr"]
+        p_rev = row["_p_rev_job"]
+        mileage_pct = row.get("Mileage Cost %", 0)
+
+        if p_units > 0.8 and p_rev > 0.8:
+            return "Mentor Candidate"
+        if p_units < 0.5 and p_rev > 0.5:
+            return "Needs Speed/Efficiency Training"
+        if p_units > 0.5 and p_rev < 0.5:
+            return "Needs Upsell/Value Training"
+        if mileage_pct > 15:
+            return "Needs Route Optimization Coaching"
+        return "On Track"
+
+    df["Coaching Profile"] = df.apply(coaching_profile, axis=1)
 
     # cleanup temp cols
     df = df.drop(columns=["_p_units_hr", "_p_rev_job", "_p_gross_hr"], errors="ignore")
@@ -603,7 +664,8 @@ def compute_capacity_analysis(df: pd.DataFrame) -> Optional[pd.DataFrame]:
         "Revenue/Tech": "mean",
         "Hours/Tech": "mean",
         "Units/Tech vs Benchmark": "mean",
-        "Rev/Tech vs Benchmark": "mean"
+        "Rev/Tech vs Benchmark": "mean",
+        "Benchmark Units/Tech": "mean"
     }).reset_index()
     
     team_capacity["Avg Techs/Week"] = team_capacity["Techs"].round(1)
@@ -613,6 +675,10 @@ def compute_capacity_analysis(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     team_capacity["Units/Tech vs Avg %"] = team_capacity["Units/Tech vs Benchmark"].round(1)
     team_capacity["Rev/Tech vs Avg %"] = team_capacity["Rev/Tech vs Benchmark"].round(1)
     
+    # Target Techs calculations
+    team_capacity["Target Techs"] = _safe_div(team_capacity["Units"], team_capacity["Benchmark Units/Tech"]).round(1)
+    team_capacity["Techs to Hire/Transfer"] = (team_capacity["Avg Techs/Week"] - team_capacity["Target Techs"]).round(1)
+
     # Diagnose staffing
     def diagnose_capacity(row):
         units_var = row["Units/Tech vs Avg %"]
@@ -633,8 +699,9 @@ def compute_capacity_analysis(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     team_capacity["Staffing Assessment"] = team_capacity.apply(diagnose_capacity, axis=1)
     
     # Clean up columns for output
-    output_cols = ["Team", "Avg Techs/Week", "Avg Units/Tech/Week", "Avg Rev/Tech/Week", 
-                   "Avg Hrs/Tech/Week", "Units/Tech vs Avg %", "Rev/Tech vs Avg %", 
+    output_cols = ["Team", "Avg Techs/Week", "Target Techs", "Techs to Hire/Transfer",
+                   "Avg Units/Tech/Week", "Avg Rev/Tech/Week", "Avg Hrs/Tech/Week",
+                   "Units/Tech vs Avg %", "Rev/Tech vs Avg %",
                    "Staffing Assessment", "Hours", "Units", "Revenue"]
     team_capacity = team_capacity[output_cols].sort_values("Units/Tech vs Avg %", ascending=False)
     
@@ -840,6 +907,11 @@ def write_excel_report(
         ["Revenue/Tech", "Total Revenue / Unique Techs"],
         ["Volume Index", "Week's units as % of average (100 = average)"],
         ["Efficiency Index", "Week's $/Hr as % of average (100 = average)"],
+        ["Target Techs", "Number of techs required to match the benchmark units per tech"],
+        ["Techs to Hire/Transfer", "Target Techs minus Average Techs. Positive means hire, negative means transfer/reduce."],
+        ["Consistency Score", "Standard deviation of a technician's daily Gross $/Hr (lower means more consistent)"],
+        ["Flight Risk", "High Risk if recent weeks' average hours are less than 50% of historical average"],
+        ["Coaching Profile", "Data-driven training recommendation based on Units/Hr, Rev/Job, and Mileage"],
         ["", ""],
         ["Tier", "Meaning"],
         ["Elite", "Top 10% by Efficiency Score"],

@@ -205,18 +205,25 @@ def render_capacity_overview(capacity_analysis: pd.DataFrame):
         return
     
     # Count by assessment
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     understaffed = len(capacity_analysis[capacity_analysis["Staffing Assessment"].str.contains("Understaffed")])
     rightsized = len(capacity_analysis[capacity_analysis["Staffing Assessment"].str.contains("Right-sized")])
     overstaffed = len(capacity_analysis[capacity_analysis["Staffing Assessment"].str.contains("Overstaffed")])
     
+    techs_to_hire = capacity_analysis[capacity_analysis["Techs to Hire/Transfer"] > 0]["Techs to Hire/Transfer"].sum()
+    techs_to_transfer = abs(capacity_analysis[capacity_analysis["Techs to Hire/Transfer"] < 0]["Techs to Hire/Transfer"].sum())
+
     with col1:
         st.metric("🔴 Understaffed", understaffed, help="Output/tech >10% above average")
     with col2:
         st.metric("🟢 Right-sized", rightsized, help="Output/tech within ±10% of average")
     with col3:
         st.metric("🔴 Overstaffed", overstaffed, help="Output/tech >10% below average")
+    with col4:
+        st.metric("📈 Total Techs to Hire", round(techs_to_hire, 1), help="Total missing headcount across understaffed teams")
+    with col5:
+        st.metric("📉 Total Techs to Transfer", round(techs_to_transfer, 1), help="Total excess headcount across overstaffed teams")
     
     # Scatter plot: Techs vs Output/Tech
     if len(capacity_analysis) > 1:
@@ -314,9 +321,13 @@ def render_efficiency_rankings(team_stats: pd.DataFrame, individual_stats: pd.Da
     with col2:
         st.write("**Top 10 Technicians (by Efficiency Score)**")
         if "Efficiency Score" in individual_stats.columns:
-            top_techs = individual_stats.nlargest(10, "Efficiency Score")[
-                ["Technician", "Technician Team", "Efficiency Score", "Tier", "Gross $/Hr"]
-            ].reset_index(drop=True)
+            cols_to_show = ["Technician", "Technician Team", "Efficiency Score", "Tier", "Gross $/Hr"]
+            if "Coaching Profile" in individual_stats.columns:
+                cols_to_show.append("Coaching Profile")
+            if "Flight Risk" in individual_stats.columns:
+                cols_to_show.append("Flight Risk")
+
+            top_techs = individual_stats.nlargest(10, "Efficiency Score")[cols_to_show].reset_index(drop=True)
             top_techs.index = top_techs.index + 1
             st.dataframe(top_techs, use_container_width=True)
 
