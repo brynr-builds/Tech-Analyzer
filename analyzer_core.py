@@ -677,7 +677,7 @@ def compute_capacity_analysis(df: pd.DataFrame) -> Optional[pd.DataFrame]:
     
     # Target Techs calculations
     team_capacity["Target Techs"] = _safe_div(team_capacity["Units"], team_capacity["Benchmark Units/Tech"]).round(1)
-    team_capacity["Techs to Hire/Transfer"] = (team_capacity["Avg Techs/Week"] - team_capacity["Target Techs"]).round(1)
+    team_capacity["Techs to Hire/Transfer"] = (team_capacity["Target Techs"] - team_capacity["Avg Techs/Week"]).round(1)
 
     # Diagnose staffing
     def diagnose_capacity(row):

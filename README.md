@@ -15,7 +15,16 @@ A Streamlit-based dashboard for analyzing technician performance, team efficienc
 
 ## Quick Start
 
-### Option 1: Run Locally
+### Sharing and Running Easily (No Terminal Required)
+
+You can easily zip this entire folder and send it to a friend or coworker. Assuming they have Python installed, they can just unzip the folder and double-click the script for their operating system:
+
+- **Windows:** Double-click `run_windows.bat`
+- **Mac/Linux:** Double-click `run_mac.command`
+
+These scripts will automatically handle setting up the environment, installing required packages, and launching the dashboard in the browser.
+
+### Developer Setup (Terminal)
 
 ```bash
 # Clone the repo
@@ -31,12 +40,6 @@ pip install -r requirements.txt
 
 # Run the dashboard
 streamlit run dashboard.py
-```
-
-### Option 2: One-Line Install (Mac/Linux)
-
-```bash
-git clone https://github.com/brynr-builds/Tech-Analyzer.git && cd Tech-Analyzer && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt && streamlit run dashboard.py
 ```
 
 ## Usage
