@@ -470,22 +470,36 @@ def main():
 
         **With this dashboard, you can:**
         - Identify understaffed teams that need to hire, and overstaffed teams that can reduce headcount.
-        - Get data-driven coaching recommendations for every single technician (e.g., Needs Speed Training, Upsell Training).
+        - Get data-driven coaching recommendations for every single technician.
         - Catch flight risks early before they churn.
-        - Understand how seasonality impacts efficiency.
+        """)
 
-        **How to use:**
-        1. Open the sidebar on the left.
-        2. Upload your Daily Tech Performance Excel files (or a `.zip` file containing them).
-        3. The dashboard will automatically calculate everything and generate a downloadable report!
+        st.info("👈 **To get started:** Open the sidebar on the left and upload your Excel data.")
+
+        st.markdown("---")
+        st.markdown("### 📘 Data Setup Walkthrough")
+
+        st.markdown("""
+        To process your information and get the desired outputs, you need to set up a pipeline to export data from your CRM/Dispatch system (like ServiceTitan, FieldEdge, etc.) into an Excel format.
+
+        #### Step 1: Export Your Data
+        Run a daily or weekly report in your system that details the performance of each technician. Export this report as an `.xlsx` or `.xls` file. You can upload multiple days/weeks of files at once, or zip them into a single `.zip` file and upload that.
         
-        **Expected Excel Columns:**
-        - `Technician` (or Tech/Name)
-        - `Technician Team` (or Team/Region)
-        - `Hours`
-        - `Units`
-        - `Amount` (or Revenue)
-        - `Date` (Optional, required for capacity and flight risk)
+        #### Step 2: Ensure Required Columns
+        The analyzer is smart and will try to match your column names, but ensure your report contains data that matches these core concepts:
+
+        *   **Technician Name:** (Required) Who did the work? *[Accepts: Technician, Tech, Name]*
+        *   **Technician Team:** (Required) What region/team are they on? *[Accepts: Team, Region, Market]*
+        *   **Hours Worked:** (Required) *[Accepts: Hours, Hrs, Labor Hours]*
+        *   **Jobs/Units Completed:** (Required) *[Accepts: Units, Jobs, Builds, Qty]*
+        *   **Revenue/Amount:** (Required) The gross dollars generated. *[Accepts: Amount, Revenue, Sales, Invoice Amount]*
+        *   **Date:** (Highly Recommended) The date the work was performed. If you exclude this, the tool cannot calculate Capacity (hiring needs), Seasonality, or Flight Risks.
+
+        #### Step 3: Interpret the Outputs
+        Once uploaded, navigate the tabs to find your insights:
+        *   **Capacity Analysis:** Tells you exactly how many technicians a specific team needs to hire (or transfer away) to match your territory's average workload per technician.
+        *   **Efficiency Rankings:** Check the "Coaching Profile" column. The tool will automatically suggest if a tech needs "Speed Training" (too slow) or "Upsell Training" (doing jobs fast, but for low dollars).
+        *   **Diagnostic Summary:** Groups your teams into 4 quadrants so you know which managers to praise and which need a rebuild strategy.
         """)
         st.stop()
 

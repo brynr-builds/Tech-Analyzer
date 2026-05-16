@@ -15,16 +15,27 @@ A Streamlit-based dashboard for analyzing technician performance, team efficienc
 
 ## Quick Start
 
-### Sharing and Running Easily (No Terminal Required)
+### Option 1: Zero-Install Cloud Hosting (Easiest for Sharing)
 
-You can easily zip this entire folder and send it to a friend or coworker. Assuming they have Python installed, they can just unzip the folder and double-click the script for their operating system:
+If you want to share this tool with someone who isn't technical and doesn't want to download or install anything, the easiest way is to host it online for free using Streamlit Community Cloud:
+
+1. Upload this entire code folder to a public or private GitHub repository.
+2. Go to [share.streamlit.io](https://share.streamlit.io/) and log in.
+3. Click **"New app"**, select your GitHub repository, and type `dashboard.py` in the "Main file path" box.
+4. Click **Deploy!**
+
+You'll instantly get a public URL (e.g., `https://your-tech-analyzer.streamlit.app/`) that anyone can visit to upload their data and get insights from any device.
+
+### Option 2: Local Download (No Terminal Required)
+
+You can zip this entire folder and send it to a friend or coworker. Assuming they have Python installed, they can just unzip the folder and double-click the setup script for their operating system:
 
 - **Windows:** Double-click `run_windows.bat`
 - **Mac/Linux:** Double-click `run_mac.command`
 
 These scripts will automatically handle setting up the environment, installing required packages, and launching the dashboard in the browser.
 
-### Developer Setup (Terminal)
+### Option 3: Developer Setup (Terminal)
 
 ```bash
 # Clone the repo
